@@ -1,0 +1,6 @@
+[options]
+namespace=
+number_of_containers=
+container_name=
+image_name=
+image_pull_policy=
