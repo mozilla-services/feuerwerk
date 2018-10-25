@@ -43,7 +43,7 @@ your project needs
 If you modify any values in the `.env` file, you need to deactivate the virtual environment
 and re-activate it. Use the following command sequence to do so:
 
-* `pipenv exit`
+* `exit`
 * `pipenv shell`
 
 ## How To Run A Loadtest

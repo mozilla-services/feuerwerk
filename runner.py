@@ -1,7 +1,6 @@
 import os
 import progressbar
-
-
+import re
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
 
@@ -13,7 +12,7 @@ def create_deployment_object(number_of_containers, image_name):
         container = client.V1Container(
             name="feuerwerk%s" % number_of_containers,
             image=image_name,
-            image_pull_policy='IfNotPresent',
+            image_pull_policy="IfNotPresent",
         )
         containers.append(container)
         number_of_containers = number_of_containers - 1
@@ -60,6 +59,29 @@ def terminated_iter(v1):
 
 
 def main():
+    # Make sure all our user-configurable values have been set
+    required_fields = [
+        "FEUERWERK_CONTAINER_NAME",
+        "FEUERWERK_DEPLOYMENT_NAME",
+        "FEUERWERK_IMAGE_NAME",
+        "FEUERWERK_NUM_CONTAINERS",
+    ]
+    for field in required_fields:
+        if field not in os.environ:
+            print("{} was not set in your .env file".format(field))
+            exit(1)
+
+    # Make sure our user-configurable values contain expected characters
+    for field in ["FEUERWERK_CONTAINER_NAME", "FEUERWERK_DEPLOYMENT_NAME"]:
+        if re.match("^.[\w-]+$", os.environ[field]) is None:
+            print("{} can only contain alphanumeric characters".format(field))
+            exit(1)
+
+    if int(os.environ["FEUERWERK_NUM_CONTAINERS"]) <= 0:
+        print("FEUERWERK_NUM_CONTAINERS must be a positive integer")
+        exit(1)
+
+    # Create our progress bar
     bar = progressbar.ProgressBar(max_value=progressbar.UnknownLength)
 
     # Get our k8s configuration info
