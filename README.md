@@ -105,7 +105,7 @@ You should see output similar to the following:
 Loading our k8s config
 Creating API instance object for GCP
 Creating our deployment
-Running load test using 3 instance(s) of gcr.io/yetanothertest-219614/kintowe-loadtests image
+Running load test using 3 instance(s) of kintowe-loadtests image
 Load test completed
 Loadtest containers exited without errors
 Deployment deleted
