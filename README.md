@@ -80,7 +80,7 @@ Then we need to give that user permission to access your project
 With the user configured, we need to obtain the access keys and other credentials associated with the
 user we created. These will be written to a file on your local filesystem.
 
-`gcloud iam service-accounts keys create loadtest.json --iam-account feuerwerk@yetanothertest-219614.iam.gserciceaccount.com`
+`gcloud iam service-accounts keys create loadtest.json --iam-account feuerwerk@yetanothertest-219614.iam.gserviceaccount.com`
 
 Next, we need to assign a value representing the fully qualified of path of the file to an
 environment variable so the Kubernetes python client libraries can find. For [bash](https://www.gnu.org/software/bash/)
