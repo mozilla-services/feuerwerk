@@ -29,23 +29,6 @@ the following commands:
 * `pipenv install`
 * `pipenv shell`
 
-## Configuration
-
-Feuerwerk uses environment variables to store configurable values. There is a sample configuration
-file called `.env-dist` that you need to copy to `.env` and then set those values to ones
-your project needs
-
-* `FEUERWERK_CONTAINER_NAME` is an alphanumeric string for labelling your GKE containers
-* `FEUERWERK_DEPLOYMENT_NAME` is an alphanumeric string for labelling your GKE deployment
-* `FEUERWERK_IMAGE_NAME` is the name of your Docker image that contains your load test
-* `FEUERWERK_NUM_OF_CONTAINERS` is the number of containers you wish to run
-
-If you modify any values in the `.env` file, you need to deactivate the virtual environment
-and re-activate it. Use the following command sequence to do so:
-
-* `exit`
-* `pipenv shell`
-
 ## How To Run A Loadtest
 
 ### Project Creation and Configuration
@@ -99,13 +82,22 @@ To run your load test, run the following command:
 
 `python runner.py`
 
+You will be prompted to enter:
+
+* a name for the deployment
+* how many copies of your container to run at once
+* the name of the image (ie gcr.io/yetanothertest-219614/kintowe-loadtests)
+
 You should see output similar to the following:
 
 ```
+Please enter the name of the deployment (alphanumeric with no spaces): kintowe
+How many copies of the container do you want running? 5
+What image are you using? (include full URL without http(s)://) gcr.io/yetanothertest-219614/kintowe-loadtests
 Loading our k8s config
 Creating API instance object for GCP
 Creating our deployment
-Running load test using 3 instance(s) of kintowe-loadtests image
+Running load test using 5 instance(s) of gcr.io/yetanothertest-219614/kintowe-loadtests image
 Load test completed
 Loadtest containers exited without errors
 Deployment deleted

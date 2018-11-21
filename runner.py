@@ -5,7 +5,7 @@ from kubernetes import client, config
 from kubernetes.client.rest import ApiException
 
 
-def create_deployment_object(number_of_containers, image_name):
+def create_deployment_object(number_of_containers, image_name, deployment_name):
     containers = []
 
     while number_of_containers > 0:
@@ -29,7 +29,7 @@ def create_deployment_object(number_of_containers, image_name):
     deployment = client.ExtensionsV1beta1Deployment(
         api_version="extensions/v1beta1",
         kind="Deployment",
-        metadata=client.V1ObjectMeta(name=os.environ["FEUERWERK_DEPLOYMENT_NAME"]),
+        metadata=client.V1ObjectMeta(name=deployment_name),
         spec=spec,
     )
 
@@ -40,9 +40,9 @@ def create_deployment(api_instance, deployment):
     api_instance.create_namespaced_deployment(body=deployment, namespace="default")
 
 
-def delete_deployment(api_instance):
+def delete_deployment(api_instance, deployment_name):
     api_instance.delete_namespaced_deployment(
-        name=os.environ["FEUERWERK_DEPLOYMENT_NAME"],
+        name=deployment_name,
         namespace="default",
         body=client.V1DeleteOptions(
             propagation_policy="Foreground", grace_period_seconds=5
@@ -59,27 +59,33 @@ def terminated_iter(v1):
 
 
 def main():
-    # Make sure all our user-configurable values have been set
-    required_fields = [
-        "FEUERWERK_CONTAINER_NAME",
-        "FEUERWERK_DEPLOYMENT_NAME",
-        "FEUERWERK_IMAGE_NAME",
-        "FEUERWERK_NUM_CONTAINERS",
-    ]
-    for field in required_fields:
-        if field not in os.environ:
-            print("{} was not set in your .env file".format(field))
-            exit(1)
+    # Get the name of this deployment:
+    finished = False
+    while not finished:
+        deployment_name = input(
+            "Please enter the name of the deployment (alphanumeric with no spaces): "
+        )
+        if deployment_name.isalnum():
+            finished = True
+        else:
+            print("The deployment name must be alphanumeric with no spaces")
 
-    # Make sure our user-configurable values contain expected characters
-    for field in ["FEUERWERK_CONTAINER_NAME", "FEUERWERK_DEPLOYMENT_NAME"]:
-        if re.match("^.[\w-]+$", os.environ[field]) is None:
-            print("{} can only contain alphanumeric characters".format(field))
-            exit(1)
-
-    if int(os.environ["FEUERWERK_NUM_CONTAINERS"]) <= 0:
-        print("FEUERWERK_NUM_CONTAINERS must be a positive integer")
-        exit(1)
+    # Get the number of containers we are supposed to be running
+    finished = False
+    while not finished:
+        number_of_containers = input(
+            "How many copies of the container do you want running? "
+        )
+        if int(number_of_containers) <= 0:
+            print(
+                "The number of copies of containers to run must be a positive integer"
+            )
+        else:
+            finished = True
+    # Get the name of our Docker image
+    image_name = input(
+        "What image are you using? (include full URL without http(s)://) "
+    )
 
     # Create our progress bar
     bar = progressbar.ProgressBar(max_value=progressbar.UnknownLength)
@@ -95,13 +101,14 @@ def main():
     # Create our loadtest deployment
     print("Creating our deployment")
     deployment = create_deployment_object(
-        number_of_containers=int(os.environ["FEUERWERK_NUM_CONTAINERS"]),
-        image_name=os.environ["FEUERWERK_IMAGE_NAME"],
+        number_of_containers=int(number_of_containers),
+        image_name=image_name,
+        deployment_name=deployment_name,
     )
     create_deployment(api_instance, deployment)
 
     msg = "Running load test using {} instance(s) of {} image".format(
-        os.environ["FEUERWERK_NUM_CONTAINERS"], os.environ["FEUERWERK_IMAGE_NAME"]
+        number_of_containers, image_name
     )
     print(msg)
 
@@ -126,7 +133,7 @@ def main():
 
     # Now go and delete the job and we're done!
     try:
-        delete_deployment(api_instance)
+        delete_deployment(api_instance, deployment_name)
         print("Deployment deleted")
     except ApiException as e:
         print("Exception while trying to delete load test job: %s\n" % e)
