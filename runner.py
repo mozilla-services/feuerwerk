@@ -1,6 +1,6 @@
 import os
 import progressbar
-import re
+import time
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
 
@@ -60,32 +60,42 @@ def terminated_iter(v1):
 
 def main():
     # Get the name of this deployment:
-    finished = False
-    while not finished:
-        deployment_name = input(
-            "Please enter the name of the deployment (alphanumeric with no spaces): "
-        )
-        if deployment_name.isalnum():
-            finished = True
-        else:
-            print("The deployment name must be alphanumeric with no spaces")
+    if os.environ["DEPLOYMENT_NAME"] == "":
+        finished = False
+        while not finished:
+            deployment_name = input(
+                "Please enter the name of the deployment (alphanumeric with no spaces): "
+            )
+            if deployment_name.isalnum():
+                finished = True
+            else:
+                print("The deployment name must be alphanumeric with no spaces")
+    else:
+        deployment_name = os.environ["DEPLOYMENT_NAME"]
 
     # Get the number of containers we are supposed to be running
-    finished = False
-    while not finished:
-        number_of_containers = input(
-            "How many copies of the container do you want running? "
-        )
-        if int(number_of_containers) <= 0:
-            print(
-                "The number of copies of containers to run must be a positive integer"
+    if os.environ["NUMBER_OF_CONTAINERS"] == "":
+        finished = False
+        while not finished:
+            number_of_containers = int(
+                input("How many copies of the container do you want running? ")
             )
-        else:
-            finished = True
+            if number_of_containers <= 0:
+                print(
+                    "The number of copies of containers to run must be a positive integer"
+                )
+            else:
+                finished = True
+    else:
+        number_of_containers = int(os.environ["NUMBER_OF_CONTAINERS"])
+
     # Get the name of our Docker image
-    image_name = input(
-        "What image are you using? (include full URL without http(s)://) "
-    )
+    if os.environ["IMAGE_NAME"] == "":
+        image_name = input(
+            "What image are you using? (include full URL without http(s)://) "
+        )
+    else:
+        image_name = os.environ["IMAGE_NAME"]
 
     # Create our progress bar
     bar = progressbar.ProgressBar(max_value=progressbar.UnknownLength)
@@ -101,7 +111,7 @@ def main():
     # Create our loadtest deployment
     print("Creating our deployment")
     deployment = create_deployment_object(
-        number_of_containers=int(number_of_containers),
+        number_of_containers=number_of_containers,
         image_name=image_name,
         deployment_name=deployment_name,
     )
