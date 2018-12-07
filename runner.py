@@ -1,8 +1,32 @@
 import os
 import progressbar
 import time
+import uuid
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
+from threading import Thread,Event
+
+
+class ProgressBarUpdater(Thread):
+    def __init__(self):
+        super().__init__()
+        self.bar = progressbar.ProgressBar(max_value=progressbar.UnknownLength)
+        self.should_finish = Event()
+
+    def run(self):
+        while not self.should_finish.is_set():
+            self.bar.update()
+            time.sleep(0.1)
+
+        self.bar.finish()
+
+
+class TooManyRetriesTerminated:
+    reason = "toomanyretries"
+
+
+class NoContainersTerminated:
+    reason = "nocontainers"
 
 
 def create_deployment_object(number_of_containers, image_name, deployment_name):
@@ -50,28 +74,40 @@ def delete_deployment(api_instance, deployment_name):
     )
 
 
+class NotReadyError(Exception):
+    pass
+
+
 def terminated_iter(v1):
-    for item in v1.list_pod_for_all_namespaces(watch=False).items:
-        for container in item.status.container_statuses:
-            terminated = container.state.terminated
-            if isinstance(terminated, client.V1ContainerStateTerminated):
-                yield terminated
+    retry_count = 1
+    no_container_count = 1
+
+    while retry_count <= 3 and no_container_count <= 5:
+        try:
+            for item in v1.list_pod_for_all_namespaces(watch=False).items:
+                if item.status.container_statuses is None:
+                    retry_count += 1
+                    time.sleep(5)
+                    break
+                for container in item.status.container_statuses:
+                    terminated = container.state.terminated
+                    if isinstance(terminated, client.V1ContainerStateTerminated):
+                        yield terminated
+                    else:
+                        no_container_count += 1
+                        time.sleep(5)
+        except Exception as e:
+            raise e
+
+    # @TODO Better messaging that we ran out of retries
+    if retry_count > 3:
+        yield TooManyRetriesTerminated
+
+    yield NoContainersTerminated
 
 
 def main():
-    # Get the name of this deployment:
-    if os.environ["DEPLOYMENT_NAME"] == "":
-        finished = False
-        while not finished:
-            deployment_name = input(
-                "Please enter the name of the deployment (alphanumeric with no spaces): "
-            )
-            if deployment_name.isalnum():
-                finished = True
-            else:
-                print("The deployment name must be alphanumeric with no spaces")
-    else:
-        deployment_name = os.environ["DEPLOYMENT_NAME"]
+    deployment_name = "fw-" + uuid.uuid4().hex
 
     # Get the number of containers we are supposed to be running
     if os.environ["NUMBER_OF_CONTAINERS"] == "":
@@ -98,7 +134,7 @@ def main():
         image_name = os.environ["IMAGE_NAME"]
 
     # Create our progress bar
-    bar = progressbar.ProgressBar(max_value=progressbar.UnknownLength)
+    bar = ProgressBarUpdater()
 
     # Get our k8s configuration info
     print("Loading our k8s config")
@@ -109,7 +145,7 @@ def main():
     api_instance = client.ExtensionsV1beta1Api()
 
     # Create our loadtest deployment
-    print("Creating our deployment")
+    print("Creating our deployment {}".format(deployment_name))
     deployment = create_deployment_object(
         number_of_containers=number_of_containers,
         image_name=image_name,
@@ -121,6 +157,7 @@ def main():
         number_of_containers, image_name
     )
     print(msg)
+    bar.start()
 
     # Now watch until our test is done
     v1 = client.CoreV1Api()
@@ -128,16 +165,25 @@ def main():
     terminated_msg = "Loadtest containers exited without errors"
 
     while not containers_terminated:
-        bar.update()
         for terminated in terminated_iter(v1):
             if terminated.reason == "Completed":
+                bar.should_finish.set()
+                time.sleep(1)
                 containers_terminated = True
                 if terminated.exit_code != 0:
                     terminated_msg = (
                         "Loadtest containers exited with errors, please check the logs"
                     )
+            elif terminated.reason == "toomanyretries":
+                bar.should_finish.set()
+                containers_terminated = True
+                terminated_msg = "Could not get container status from GCP"
+            elif terminated.reason == "nocontainers":
+                bar.should_finish.set()
+                containers_terminated = True
+                terminated_msg = "GCP reported no containers could be found"
 
-    bar.finish()
+    time.sleep(2)
     print("Load test completed")
     print(terminated_msg)
 
