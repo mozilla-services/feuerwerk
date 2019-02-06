@@ -46,7 +46,7 @@ followed by setting which [region and zone](https://cloud.google.com/compute/doc
 you wish to run your tests in. In this example we are using the US West zone. Choose a
 zone that provides you with the computing resources you will need to run your tests.
 
-`gcloud config set compute/zone us-west-1a`
+`gcloud config set compute/zone us-west1a`
 
 ### Service User and Credentials
 
@@ -75,6 +75,10 @@ You can optionally add the following line to your `.env` file so it is accessibl
 the next time you exit the virtual environment and re-enter it.
 
 `GOOGLE_APPLICATION_CREDENTIALS=/Users/chartjes/mozilla-services/feuerwerk/loadtest.json`
+
+You will also need to set up a cluster for your load test containers to run in.
+Please follow the instructions on [configuring cluster access for kubectl](https://cloud.google.com/kubernetes-engine/docs/how-to/cluster-access-for-kubectl).
+
 
 ### Run Your Load Test
 

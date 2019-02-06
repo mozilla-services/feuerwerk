@@ -110,7 +110,7 @@ def main():
     deployment_name = "fw-" + uuid.uuid4().hex
 
     # Get the number of containers we are supposed to be running
-    if os.environ["NUMBER_OF_CONTAINERS"] == "":
+    if "NUMBER_OF_CONTAINERS" not in os.environ:
         finished = False
         while not finished:
             number_of_containers = int(
@@ -126,7 +126,7 @@ def main():
         number_of_containers = int(os.environ["NUMBER_OF_CONTAINERS"])
 
     # Get the name of our Docker image
-    if os.environ["IMAGE_NAME"] == "":
+    if "IMAGE_NAME" not in os.environ:
         image_name = input(
             "What image are you using? (include full URL without http(s)://) "
         )
