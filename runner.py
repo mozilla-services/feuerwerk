@@ -1,7 +1,10 @@
+import base64
 import os
 import progressbar
+import requests
 import time
 import uuid
+
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
 from threading import Thread,Event
@@ -109,6 +112,17 @@ def terminated_iter(v1):
 def main():
     deployment_name = "fw-" + uuid.uuid4().hex
 
+    # Create our progress bar
+    bar = ProgressBarUpdater()
+
+    # Get our k8s configuration info
+    print("Loading our k8s config")
+    config.load_kube_config()
+
+    # Grab an API instance for GCP
+    print("Creating API instance object for GCP")
+    api_instance = client.ExtensionsV1beta1Api()
+
     # Get the number of containers we are supposed to be running
     if "NUMBER_OF_CONTAINERS" not in os.environ:
         finished = False
@@ -126,23 +140,33 @@ def main():
         number_of_containers = int(os.environ["NUMBER_OF_CONTAINERS"])
 
     # Get the name of our Docker image
-    if "IMAGE_NAME" not in os.environ:
-        image_name = input(
-            "What image are you using? (include full URL without http(s)://) "
+    finished = False
+    while not finished:
+        if "IMAGE_NAME" not in os.environ:
+            image_name = input(
+                "What Docker image are you using? (ie chartjes/kinto-loadtests) "
+            )
+        else:
+            image_name = os.environ["IMAGE_NAME"]
+
+        # Verify that the image exists (assuming it has been uploaded to Docker
+        print("Checking if image exists at Docker Hub...")
+        resp = requests.get(
+            url='https://auth.docker.io/token?service=registry.docker.io&scope=repository:{}:pull'.format(image_name),
+            auth=('chartjes', '72y#vBI*uF54roi%')
         )
-    else:
-        image_name = os.environ["IMAGE_NAME"]
+        bearer_token = 'Bearer {}'.format(resp.json()['token'])
+        headers = {'Authorization': bearer_token}
+        resp = requests.get(
+            url='https://registry-1.docker.io/v2/{}/manifests/latest'.format(image_name),
+            headers=headers
+        )
 
-    # Create our progress bar
-    bar = ProgressBarUpdater()
+        if resp.status_code != 404:
+            finished = True
+        else:
+            print("Could not find the requested Docker image")
 
-    # Get our k8s configuration info
-    print("Loading our k8s config")
-    config.load_kube_config()
-
-    # Grab an API instance for GCP
-    print("Creating API instance object for GCP")
-    api_instance = client.ExtensionsV1beta1Api()
 
     # Create our loadtest deployment
     print("Creating our deployment {}".format(deployment_name))
@@ -152,7 +176,6 @@ def main():
         deployment_name=deployment_name,
     )
     create_deployment(api_instance, deployment)
-
     msg = "Running load test using {} instance(s) of {} image".format(
         number_of_containers, image_name
     )

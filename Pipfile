@@ -13,8 +13,7 @@ google-auth = "*"
 google-cloud = "*"
 google-cloud-container = "*"
 "progressbar2" = "*"
-pyyaml = ">=4.2b1"
-
+pyyaml = "*"
 
 [requires]
 python_version = "3.6"
