@@ -95,15 +95,23 @@ You will be prompted to enter:
 You should see output similar to the following:
 
 ```
-Please enter the name of the deployment (alphanumeric with no spaces): kintowe
-How many copies of the container do you want running? 5
-What image are you using? (include full URL without http(s)://) gcr.io/yetanothertest-219614/kintowe-loadtests
 Loading our k8s config
 Creating API instance object for GCP
-Creating our deployment
-Running load test using 5 instance(s) of gcr.io/yetanothertest-219614/kintowe-loadtests image
+How many copies of the container do you want running? 3
+What Docker image are you using? (ie chartjes/kinto-loadtests) chartjes/kinto-loadtest
+Checking to see if image exists locally...
+Could not find the image locally
+Checking if image exists at Docker Hub...
+Could not find the requested Docker image
+What Docker image are you using? (ie chartjes/kinto-loadtests) chartjes/kinto-loadtests
+Checking to see if image exists locally...
+Could not find the image locally
+Checking if image exists at Docker Hub...
+Found the image on Docker hub
+Creating our deployment fw-d1f678bb4a8b4580b674739c589b31f8
+Running load test using 3 instance(s) of chartjes/kinto-loadtests image                            #                                                                  | 0 Elapsed Time: 0:04:25 
 Load test completed
-Loadtest containers exited without errors
+GCP reported no containers could be found
 Deployment deleted
 ```
 

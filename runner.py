@@ -1,8 +1,10 @@
 import base64
+import docker
 import os
 import progressbar
 import requests
 import time
+import urllib3
 import uuid
 
 from kubernetes import client, config
@@ -149,7 +151,28 @@ def main():
         else:
             image_name = os.environ["IMAGE_NAME"]
 
-        # Verify that the image exists (assuming it has been uploaded to Docker
+        # First let's see if the image exists locally
+        print("Checking to see if image exists locally...")
+        try:
+            docker_client = docker.from_env()
+            docker_client.images.get(image_name)
+            local_image = True
+            finished = True
+        except urllib3.exceptions.ProtocolError:
+            local_image = False
+        except docker.errors.ImageNotFound:
+            local_image = False
+        except FileNotFoundError:
+            local_image = False
+        except requests.exceptions.ConnectionError:
+            local_image = False
+
+        if local_image:
+            print("Found the image locally...")
+            finished = True
+            continue
+
+        print("Could not find the image locally")
         print("Checking if image exists at Docker Hub...")
         resp = requests.get(
             url='https://auth.docker.io/token?service=registry.docker.io&scope=repository:{}:pull'.format(image_name),
@@ -163,10 +186,20 @@ def main():
         )
 
         if resp.status_code != 404:
+            print("Found the image on Docker hub")
             finished = True
-        else:
-            print("Could not find the requested Docker image")
+            continue
 
+        print("Could not find the requested Docker image on Docker Hub")
+        print("Checking to see if the image can be found online somewhere...")
+        r = requests.get('http://{}'.format(image_name))
+
+        if r.status_code == 200:
+            print("Found the Docker image online")
+            finished = True
+            continue
+
+        print("Could not find the Docker image online...")
 
     # Create our loadtest deployment
     print("Creating our deployment {}".format(deployment_name))
