@@ -176,7 +176,7 @@ def main():
         print("Checking if image exists at Docker Hub...")
         resp = requests.get(
             url='https://auth.docker.io/token?service=registry.docker.io&scope=repository:{}:pull'.format(image_name),
-            auth=('chartjes', '72y#vBI*uF54roi%')
+            auth=('', '')
         )
         bearer_token = 'Bearer {}'.format(resp.json()['token'])
         headers = {'Authorization': bearer_token}
