@@ -7,7 +7,7 @@ import time
 import urllib3
 import uuid
 
-from kubernetes import client, config
+from kubernetes import client, config, watch
 from kubernetes.client.rest import ApiException
 from threading import Thread,Event
 
@@ -26,103 +26,21 @@ class ProgressBarUpdater(Thread):
         self.bar.finish()
 
 
-class TooManyRetriesTerminated:
-    reason = "toomanyretries"
-
-
-class NoContainersTerminated:
-    reason = "nocontainers"
-
-
-def create_deployment_object(number_of_containers, image_name, deployment_name):
-    containers = []
-
-    while number_of_containers > 0:
-        container = client.V1Container(
-            name="feuerwerk%s" % number_of_containers,
-            image=image_name,
-            image_pull_policy="IfNotPresent",
-        )
-        containers.append(container)
-        number_of_containers = number_of_containers - 1
-
-    template = client.V1PodTemplateSpec(
-        metadata=client.V1ObjectMeta(labels={"app": "loadtest"}),
-        spec=client.V1PodSpec(containers=containers),
-    )
-
-    # Create the specification of deployment
-    spec = client.ExtensionsV1beta1DeploymentSpec(replicas=1, template=template)
-
-    # Instantiate the deployment object
-    deployment = client.ExtensionsV1beta1Deployment(
-        api_version="extensions/v1beta1",
-        kind="Deployment",
-        metadata=client.V1ObjectMeta(name=deployment_name),
-        spec=spec,
-    )
-
-    return deployment
-
-
-def create_deployment(api_instance, deployment):
-    api_instance.create_namespaced_deployment(body=deployment, namespace="default")
-
-
-def delete_deployment(api_instance, deployment_name):
-    api_instance.delete_namespaced_deployment(
-        name=deployment_name,
-        namespace="default",
-        body=client.V1DeleteOptions(
-            propagation_policy="Foreground", grace_period_seconds=5
-        ),
-    )
-
-
-class NotReadyError(Exception):
-    pass
-
-
-def terminated_iter(v1):
-    retry_count = 1
-    no_container_count = 1
-
-    while retry_count <= 3 and no_container_count <= 5:
-        try:
-            for item in v1.list_pod_for_all_namespaces(watch=False).items:
-                if item.status.container_statuses is None:
-                    retry_count += 1
-                    time.sleep(5)
-                    break
-                for container in item.status.container_statuses:
-                    terminated = container.state.terminated
-                    if isinstance(terminated, client.V1ContainerStateTerminated):
-                        yield terminated
-                    else:
-                        no_container_count += 1
-                        time.sleep(5)
-        except Exception as e:
-            raise e
-
-    # @TODO Better messaging that we ran out of retries
-    if retry_count > 3:
-        yield TooManyRetriesTerminated
-
-    yield NoContainersTerminated
-
-
 def main():
-    deployment_name = "fw-" + uuid.uuid4().hex
+    # Turn off any SSL warnings
+    urllib3.disable_warnings()
+
+    # Create a job name
+    job_name = "fw-" + uuid.uuid4().hex
 
     # Create our progress bar
     bar = ProgressBarUpdater()
 
     # Get our k8s configuration info
-    print("Loading our k8s config")
+    print("Initializing our k8s configuration")
     config.load_kube_config()
 
-    # Grab an API instance for GCP
-    print("Creating API instance object for GCP")
+    # Grab an API instance object
     api_instance = client.ExtensionsV1beta1Api()
 
     # Get the number of containers we are supposed to be running
@@ -143,6 +61,8 @@ def main():
 
     # Get the name of our Docker image
     finished = False
+    local_image = False
+
     while not finished:
         if "IMAGE_NAME" not in os.environ:
             image_name = input(
@@ -172,84 +92,60 @@ def main():
             finished = True
             continue
 
-        print("Could not find the image locally")
-        print("Checking if image exists at Docker Hub...")
-        resp = requests.get(
-            url='https://auth.docker.io/token?service=registry.docker.io&scope=repository:{}:pull'.format(image_name),
-            auth=('chartjes', '72y#vBI*uF54roi%')
-        )
-        bearer_token = 'Bearer {}'.format(resp.json()['token'])
-        headers = {'Authorization': bearer_token}
-        resp = requests.get(
-            url='https://registry-1.docker.io/v2/{}/manifests/latest'.format(image_name),
-            headers=headers
-        )
+    if not local_image:
+        print("Could not find the local Docker image, exiting")
+        exit(1)		
 
-        if resp.status_code != 404:
-            print("Found the image on Docker hub")
-            finished = True
-            continue
+    # Create our job
+    print("Creating our load testing job...")
+    container = client.V1Container(
+        name='loadtest',
+        image=image_name)
+    template = client.V1PodTemplateSpec(
+        metadata=client.V1ObjectMeta(labels={"app": "loadtest"}),
+        spec=client.V1PodSpec(restart_policy="Never", containers=[container]))
+    spec = client.V1JobSpec(
+        template=template,
+        parallelism=number_of_containers)
+    job = client.V1Job(
+        api_version="batch/v1",
+        kind="Job",
+        metadata=client.V1ObjectMeta(name=job_name),
+        spec=spec)
 
-        print("Could not find the requested Docker image on Docker Hub")
-        print("Checking to see if the image can be found online somewhere...")
-        r = requests.get('http://{}'.format(image_name))
+    # Start the job
+    print("Starting the load testing job...")
+    api_instance = client.BatchV1Api()
+    api_response = api_instance.create_namespaced_job(
+        body=job,
+        namespace='default')
 
-        if r.status_code == 200:
-            print("Found the Docker image online")
-            finished = True
-            continue
-
-        print("Could not find the Docker image online...")
-
-    # Create our loadtest deployment
-    print("Creating our deployment {}".format(deployment_name))
-    deployment = create_deployment_object(
-        number_of_containers=number_of_containers,
-        image_name=image_name,
-        deployment_name=deployment_name,
-    )
-    create_deployment(api_instance, deployment)
-    msg = "Running load test using {} instance(s) of {} image".format(
-        number_of_containers, image_name
-    )
-    print(msg)
+    # Monitor the status of our job
     bar.start()
+    job_done = False
+    finished_pod_count = 0
+    deleteoptions = client.V1DeleteOptions()
+    api_pods = client.CoreV1Api()
 
-    # Now watch until our test is done
-    v1 = client.CoreV1Api()
-    containers_terminated = False
-    terminated_msg = "Loadtest containers exited without errors"
-
-    while not containers_terminated:
-        for terminated in terminated_iter(v1):
-            if terminated.reason == "Completed":
+    while not job_done:
+        resp = api_instance.list_namespaced_job(namespace="default", watch=False)
+        for i in resp.items:
+            if i.status.succeeded == True:
+                job_done = True
                 bar.should_finish.set()
-                time.sleep(1)
-                containers_terminated = True
-                if terminated.exit_code != 0:
-                    terminated_msg = (
-                        "Loadtest containers exited with errors, please check the logs"
-                    )
-            elif terminated.reason == "toomanyretries":
-                bar.should_finish.set()
-                containers_terminated = True
-                terminated_msg = "Could not get container status from GCP"
-            elif terminated.reason == "nocontainers":
-                bar.should_finish.set()
-                containers_terminated = True
-                terminated_msg = "GCP reported no containers could be found"
+        time.sleep(1) 
 
-    time.sleep(2)
-    print("Load test completed")
-    print(terminated_msg)
 
-    # Now go and delete the job and we're done!
-    try:
-        delete_deployment(api_instance, deployment_name)
-        print("Deployment deleted")
-    except ApiException as e:
-        print("Exception while trying to delete load test job: %s\n" % e)
+    # Delete the job
+    print("Deleting load test job...")
+    api_instance.delete_namespaced_job(
+        job.metadata.name,
+        "default",
+        body = client.V1DeleteOptions(
+                    grace_period_seconds = 5,
+                    propagation_policy='Foreground'))
 
+    print('Load test finished')
 
 if __name__ == "__main__":
     main()
