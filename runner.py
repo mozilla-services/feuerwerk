@@ -48,11 +48,11 @@ def main():
         finished = False
         while not finished:
             number_of_containers = int(
-                input("How many copies of the container do you want running? ")
+                input("How many copies of the image do you want running? ")
             )
             if number_of_containers <= 0:
                 print(
-                    "The number of copies of containers to run must be a positive integer"
+                    "The number of copies of images to run must be a positive integer"
                 )
             else:
                 finished = True

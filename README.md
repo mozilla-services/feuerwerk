@@ -4,24 +4,33 @@
 
 Feuerwerk is a tool designed to run load tests in [Docker](https://docker.com) containers using
 [Google Kubernetes Engine](https://cloud.google.com/kubernetes-engine/). It is a command-line tool, so be sure to read up on
-how to run commands from your terminal.
+how to use whatever shell or command prompt is available for your operating system. 
 
-Feuerwerk creates a Kubernetes deployment, launches it and then monitors your containerized tests, tearing down the deployment once the tests have finished running.
+Feuerwerk creates a Kubernetes job, launches it and then deletes the job when it has succesfully completed.
 
-Feuerwerk was created and tested using [macos](https://www.apple.com/macos/), [iterm2](https://iterm2.com/) and [zsh](http://www.zsh.org/).
 Please consult the documentation for your operating system, terminal emulator and shell if any
-of the command-line instructions provided here do not work for you.
+of the command-line instructions provided here do not work for you. 
 
-## Installation
+## Requirements
 
 To use this project you will need the following tools installed:
 
+* [Python]() 3.6 or greater
 * [pipenv](https://pipenv.readthedocs.io/en/latest/) to create a virtual environment and install the required Python dependencies
-* [kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl/) to manage your Kubernetes deployments
+* [kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl/) to 
 * Google's [Cloud SDK](https://cloud.google.com/sdk/) to configure Google Kubernetes Engine for use
+* Docker to obtain images containing a load test or to turn your own load tests into a Docker image
 
-You also will need to have a [Docker](https://docker.com) image containing a load test that can be run. You can find an example
-of creating a Dockerized load test [here](https://github.com/Kinto/kinto-loadtests/blob/master/Dockerfile).
+Feuerwerk was developed
+and tested using the following configurations:
+
+* [macOS](), [iTerm 2]() and [zsh]()
+* [Windows 10]() with [Ubuntu]() running inside [Windows Subsystem for Linux](), [Windows Terminal]() and [bash]()
+
+You can find an example of creating a Dockerized load test [here](https://github.com/Kinto/kinto-loadtests/blob/master/Dockerfile). 
+
+
+## Installation
 
 Once you checked out this repo, create the virtual environment and activate it using
 the following commands:
@@ -29,11 +38,10 @@ the following commands:
 * `pipenv install`
 * `pipenv shell`
 
-## How To Run A Loadtest
 
-### Project Creation and Configuration
+## Project Creation and Configuration
 
-If you haven't already created one, use the [Google Cloud Platform Console](https://console.cloud.google.com/) to create one and
+If you haven't already created one, use the [Google Cloud Platform Console](https://console.cloud.google.com/) to create a project and
 note the value Google returns to you for the name of the project.
 
 For the sake of examples, the project ID is 'yetanothertest-219614'
@@ -46,7 +54,8 @@ followed by setting which [region and zone](https://cloud.google.com/compute/doc
 you wish to run your tests in. In this example we are using the US West zone. Choose a
 zone that provides you with the computing resources you will need to run your tests.
 
-`gcloud config set compute/zone us-west1a`
+`gcloud config set compute/zone us-west1-a`
+
 
 ### Service User and Credentials
 
@@ -76,23 +85,64 @@ the next time you exit the virtual environment and re-enter it.
 
 `GOOGLE_APPLICATION_CREDENTIALS=/Users/chartjes/mozilla-services/feuerwerk/loadtest.json`
 
-You will also need to set up a cluster for your load test containers to run in.
-Please follow the instructions on [configuring cluster access for kubectl](https://cloud.google.com/kubernetes-engine/docs/how-to/cluster-access-for-kubectl).
+### Cluster Creation
+
+You will also need to set up a cluster for your load test containers to run in. You can create one by doing
+the following:
+
+* _Google Cloud Platform_ -> _Kubernetes Engine_ -> _Configuration_
+* In the section that says "Filter secrets and config maps" click on the name (ie default-token-k7m4b)
+* Then click on _KUBECTL_ and select _Get YAML_
+
+This should open up a Cloud Shell. From inside the shell you can run the following command to get a kubectl config:
+
+`cat .kube/config`
+
+It should look something like this:
+
+```
+apiVersion: v1
+clusters:
+- cluster:
+    certificate-authority-data: <redacted because I can't share>
+    server: https://34.83.235.67
+  name: gke_autopush-test-01_us-west1-a_autopush-cluster
+contexts:
+- context:
+    cluster: gke_autopush-test-01_us-west1-a_autopush-cluster
+    user: gke_autopush-test-01_us-west1-a_autopush-cluster
+  name: gke_autopush-test-01_us-west1-a_autopush-cluster
+current-context: gke_autopush-test-01_us-west1-a_autopush-cluster
+kind: Config
+preferences: {}
+users:
+- name: gke_autopush-test-01_us-west1-a_autopush-cluster
+  user:
+    auth-provider:
+      config:
+        access-token: <redacted because I can't share>
+        cmd-args: config config-helper --format=json
+        cmd-path: /usr/lib/google-cloud-sdk/bin/gcloud
+        expiry: "2020-07-23T15:33:06Z"
+        expiry-key: '{.credential.token_expiry}'
+        token-key: '{.credential.access_token}'
+      name: gcp
+```
+
+and then cut-and-paste that into your own kubectl configuration file.
+
 
 ### Creating Your Load Test
 
-You will then need to create a load test that you can later put inside a
-[Docker](https://docker.com) container. Here is a sample that uses [Molotov](https://github.com/loads/molotov)
-as it's framework:
+If you don't already have a load test in a Docker container, you will need to create one.  Here is a sample that uses [Molotov](https://github.com/loads/molotov):
 
 ```python
-import os
 from molotov import scenario
 
 
 @scenario(weight=7)
 async def recipe_endpoint_test(session):
-    recipe_endpoint = os.environ["NORMANDY_DOMAIN"] + "/api/v1/recipe/?enabled=true/"
+    recipe_endpoint = "https://localhost/api/v1/recipe/?enabled=true/"
     async with session.get(recipe_endpoint) as resp:
         res = await resp.json()
         assert resp.status == 200
@@ -102,7 +152,7 @@ async def recipe_endpoint_test(session):
 @scenario(weight=7)
 async def signed_recipe_endpoint_test(session):
     signed_recipe_endpoint = (
-        os.environ["NORMANDY_DOMAIN"] + "/api/v1/recipe/signed/?enabled=true/"
+        "https://localhost/api/v1/recipe/signed/?enabled=true/"
     )
     async with session.get(signed_recipe_endpoint) as resp:
         res = await resp.json()
@@ -112,7 +162,7 @@ async def signed_recipe_endpoint_test(session):
 
 @scenario(weight=7)
 async def heartbeat_test(session):
-    heartbeat_endpoint = os.eviron["NORMANDY_DOMAIN"] + "/__heartbeat__"
+    heartbeat_endpoint = "https://localhost/__heartbeat__"
     async with session.get(heartbeat_endpoint) as resp:
         res = await resp.json()
         assert resp.status == 200
@@ -122,7 +172,7 @@ async def heartbeat_test(session):
 @scenario(weight=50)
 async def classify_client_test(session):
     classify_client_endpoint = (
-        os.environ["NORMANDY_DOMAIN"] + "/api/v1/classify_client/"
+        "https://localhost/api/v1/classify_client/"
     )
     async with session.get(classify_client_endpoint) as resp:
         res = await resp.json()
@@ -133,7 +183,7 @@ async def classify_client_test(session):
 
 @scenario(weight=7)
 async def implementation_url_tests(session):
-    signed_action_endpoint = os.environ["NORMANDY_DOMAIN"] + "/api/v1/action/signed/"
+    signed_action_endpoint = "https://localhost/api/v1/action/signed/"
     async with session.get(signed_action_endpoint) as resp:
         res = await resp.json()
         assert resp.status == 200
@@ -174,7 +224,7 @@ WORKDIR /molotov
 ADD . /molotov
 
 # run the test
-CMD URL_SERVER=$URL_SERVER molotov -c -v -d 60 api_tests.py
+CMD molotov -c -v -d 60 api_tests.py
 ```
 
 This can be customized based on whatever load testing framework you are using but
@@ -191,28 +241,20 @@ You will be prompted to enter:
 
 * a name for the deployment
 * how many copies of your container to run at once
-* the name of the image (ie gcr.io/yetanothertest-219614/kintowe-loadtests)
+* the name of the image (ie someproject/sample-loadtest)
 
 You should see output similar to the following:
 
 ```
-Loading our k8s config
-Creating API instance object for GCP
-How many copies of the container do you want running? 3
-What Docker image are you using? (ie chartjes/kinto-loadtests) chartjes/kinto-loadtest
+Initializing our k8s configuration
+How many copies of the image do you want running? 1
+What Docker image are you using? (ie chartjes/kinto-loadtests) someproject/sample-loadtest:v1
 Checking to see if image exists locally...
-Could not find the image locally
-Checking if image exists at Docker Hub...
-Could not find the requested Docker image
-What Docker image are you using? (ie chartjes/kinto-loadtests) chartjes/kinto-loadtests
-Checking to see if image exists locally...
-Could not find the image locally
-Checking if image exists at Docker Hub...
-Found the image on Docker hub
-Creating our deployment fw-d1f678bb4a8b4580b674739c589b31f8
-Running load test using 3 instance(s) of chartjes/kinto-loadtests image                            #                                                                  | 0 Elapsed Time: 0:04:25 
-Load test completed
-GCP reported no containers could be found
-Deployment deleted
+Found the image locally...
+Creating our load testing job...
+Starting the load testing job...
+| |                                                            #                                   | 0 Elapsed Time: 0:05:20
+Deleting load test job...
+Load test finished
 ```
 
